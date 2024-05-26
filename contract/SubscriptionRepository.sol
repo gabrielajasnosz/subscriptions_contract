@@ -1,67 +1,103 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >=0.6.0 <0.9.0;
+pragma solidity ^0.8.0;
 
-contract SubscriptionRegistry {
-    mapping(address => bool) public admins;
-    mapping(string => Subscription) subscriptions;
-    string[] subscriptionIds;
+contract SubscriptionService {
+    address public owner;
+    uint256 public subscriptionFee;
+    uint256 public subscriptionPeriod = 60 seconds;
 
-    struct Subscription {
-        string subscriptionId;
-        uint256 activationDate;
-        uint256 expirationDate;
-        string subscriptionName;
-        SubscriptionOwner subscriptionOwner;
-    }
-
-    struct SubscriptionOwner {
-        string name;
-        string surname;
+    struct Subscriber {
+        uint256 nextPaymentDue;
+        bool isSubscribed;
         string email;
+        string firstName;
+        string lastName;
     }
 
-    //    event SuccessfullyAddedSubscription(
-    //        string indexed subscriptionId,
-    //        string recipientName,
-    //        string recipientSurname,
-    //        string recipientEmail
-    //    );
-
-    constructor() {
-        admins[msg.sender] = true;
+    struct SubscriberInfo {
+        address subscriberAddress;
+        uint256 nextPaymentDue;
+        bool isSubscribed;
+        string email;
+        string firstName;
+        string lastName;
+        bool isSubscriptionActive;
     }
 
-    modifier onlyAdmins() {
-        require(admins[msg.sender], "You are not an admin!");
+    mapping(address => Subscriber) public subscribers;
+    address[] public subscriberAddresses;
+
+    event Subscribed(address indexed subscriber, uint256 nextPaymentDue, string email, string firstName, string lastName);
+    event Unsubscribed(address indexed subscriber);
+    event Payment(address indexed subscriber, uint256 amount, uint256 nextPaymentDue);
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not the contract owner");
         _;
     }
 
-    //modyfikator onlyAdmins zakomentowany, zeby kazdy mogl to wywolac
-    function addAdmin(address newAdminAddress) public // onlyAdmins
-    {
-        admins[newAdminAddress] = true;
+    modifier isSubscribed() {
+        require(subscribers[msg.sender].isSubscribed, "Not subscribed");
+        _;
     }
 
-    function removeAdmin(address _admin) public
-    {
-        admins[_admin] = false;
+    constructor(uint256 _subscriptionFee) {
+        owner = msg.sender;
+        subscriptionFee = _subscriptionFee;
     }
 
+    function subscribe(string memory email, string memory firstName, string memory lastName) external payable {
+        require(msg.value == subscriptionFee, "Incorrect subscription fee");
+        require(!subscribers[msg.sender].isSubscribed, "Already subscribed");
 
-    function isAdmin(address _admin) public view returns (bool) {
-        return admins[_admin];
+        subscribers[msg.sender] = Subscriber(block.timestamp + subscriptionPeriod, true, email, firstName, lastName);
+        subscriberAddresses.push(msg.sender);
+        emit Subscribed(msg.sender, block.timestamp + subscriptionPeriod, email, firstName, lastName);
     }
 
-    function getSubscription(string memory subscriptionId) public view
-    returns (Subscription memory result)
-    {
-        result = subscriptions[subscriptionId];
+    function unsubscribe() external isSubscribed {
+        subscribers[msg.sender].isSubscribed = false;
+        emit Unsubscribed(msg.sender);
     }
 
-    function addSubscription(Subscription memory subscription) public {
-        subscriptionIds.push(subscription.subscriptionId);
+    function makePayment() external payable isSubscribed {
+        require(msg.value == subscriptionFee, "Incorrect subscription fee");
+        require(block.timestamp >= subscribers[msg.sender].nextPaymentDue, "Payment not due yet");
 
-        //        emit SuccessfullyAddedSubscription(subscription.subscriptionId, subscription.subscriptionOwner.name, subscription.subscriptionOwner.surname, subscription.subscriptionOwner.email);
+        subscribers[msg.sender].nextPaymentDue = block.timestamp + subscriptionPeriod;
+        emit Payment(msg.sender, msg.value, subscribers[msg.sender].nextPaymentDue);
     }
 
+    function checkSubscription(address subscriber) external view returns (bool isActive, uint256 nextPaymentDue, string memory email, string memory firstName, string memory lastName) {
+        Subscriber memory sub = subscribers[subscriber];
+        bool isSubscriptionActive = sub.isSubscribed && (block.timestamp < sub.nextPaymentDue);
+        return (isSubscriptionActive, sub.nextPaymentDue, sub.email, sub.firstName, sub.lastName);
+    }
+
+    function getAllSubscribers() external view onlyOwner returns (SubscriberInfo[] memory) {
+        SubscriberInfo[] memory allSubscribers = new SubscriberInfo[](subscriberAddresses.length);
+        for (uint256 i = 0; i < subscriberAddresses.length; i++) {
+            address addr = subscriberAddresses[i];
+            Subscriber memory sub = subscribers[addr];
+            bool isSubscriptionActive = sub.isSubscribed && (block.timestamp < sub.nextPaymentDue);
+            allSubscribers[i] = SubscriberInfo(addr, sub.nextPaymentDue, sub.isSubscribed, sub.email, sub.firstName, sub.lastName, isSubscriptionActive);
+        }
+        return allSubscribers;
+    }
+
+    function withdrawFunds() external onlyOwner {
+        payable(owner).transfer(address(this).balance);
+    }
+
+    function updateSubscriptionFee(uint256 newFee) external onlyOwner {
+        subscriptionFee = newFee;
+    }
+
+    function isOwner() external view returns (bool) {
+        return msg.sender == owner;
+    }
+
+    function isSubscribedUser(address user) external view returns (bool) {
+        return subscribers[user].isSubscribed;
+    }
 }
