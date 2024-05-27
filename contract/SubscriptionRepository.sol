@@ -7,7 +7,7 @@ contract SubscriptionService {
     uint256 public subscriptionPeriod = 60 seconds;
 
     struct Subscriber {
-        uint256 nextPaymentDue;
+        uint256 subscriptionDue;
         bool isSubscribed;
         string email;
         string firstName;
@@ -16,7 +16,7 @@ contract SubscriptionService {
 
     struct SubscriberInfo {
         address subscriberAddress;
-        uint256 nextPaymentDue;
+        uint256 subscriptionDue;
         bool isSubscribed;
         string email;
         string firstName;
@@ -27,9 +27,9 @@ contract SubscriptionService {
     mapping(address => Subscriber) public subscribers;
     address[] public subscriberAddresses;
 
-    event Subscribed(address indexed subscriber, uint256 nextPaymentDue, string email, string firstName, string lastName);
+    event Subscribed(address indexed subscriber, uint256 subscriptionDue, string email, string firstName, string lastName);
     event Unsubscribed(address indexed subscriber);
-    event Payment(address indexed subscriber, uint256 amount, uint256 nextPaymentDue);
+    event Payment(address indexed subscriber, uint256 amount, uint256 subscriptionDue);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Not the contract owner");
@@ -62,16 +62,16 @@ contract SubscriptionService {
 
     function makePayment() external payable isSubscribed {
         require(msg.value == subscriptionFee, "Incorrect subscription fee");
-        require(block.timestamp >= subscribers[msg.sender].nextPaymentDue, "Payment not due yet");
+        require(block.timestamp >= subscribers[msg.sender].subscriptionDue, "Payment not due yet");
 
-        subscribers[msg.sender].nextPaymentDue = block.timestamp + subscriptionPeriod;
-        emit Payment(msg.sender, msg.value, subscribers[msg.sender].nextPaymentDue);
+        subscribers[msg.sender].subscriptionDue = block.timestamp + subscriptionPeriod;
+        emit Payment(msg.sender, msg.value, subscribers[msg.sender].subscriptionDue);
     }
 
-    function checkSubscription(address subscriber) external view returns (bool isActive, uint256 nextPaymentDue, string memory email, string memory firstName, string memory lastName) {
+    function checkSubscription(address subscriber) external view returns (bool isActive, uint256 subscriptionDue, string memory email, string memory firstName, string memory lastName) {
         Subscriber memory sub = subscribers[subscriber];
-        bool isSubscriptionActive = sub.isSubscribed && (block.timestamp < sub.nextPaymentDue);
-        return (isSubscriptionActive, sub.nextPaymentDue, sub.email, sub.firstName, sub.lastName);
+        bool isSubscriptionActive = sub.isSubscribed && (block.timestamp < sub.subscriptionDue);
+        return (isSubscriptionActive, sub.subscriptionDue, sub.email, sub.firstName, sub.lastName);
     }
 
     function getAllSubscribers() external view onlyOwner returns (SubscriberInfo[] memory) {
@@ -79,8 +79,8 @@ contract SubscriptionService {
         for (uint256 i = 0; i < subscriberAddresses.length; i++) {
             address addr = subscriberAddresses[i];
             Subscriber memory sub = subscribers[addr];
-            bool isSubscriptionActive = sub.isSubscribed && (block.timestamp < sub.nextPaymentDue);
-            allSubscribers[i] = SubscriberInfo(addr, sub.nextPaymentDue, sub.isSubscribed, sub.email, sub.firstName, sub.lastName, isSubscriptionActive);
+            bool isSubscriptionActive = sub.isSubscribed && (block.timestamp < sub.subscriptionDue);
+            allSubscribers[i] = SubscriberInfo(addr, sub.subscriptionDue, sub.isSubscribed, sub.email, sub.firstName, sub.lastName, isSubscriptionActive);
         }
         return allSubscribers;
     }
