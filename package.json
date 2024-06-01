@@ -1,0 +1,22 @@
+{
+  "name": "my-hardhat-project",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "hardhat test"
+  },
+  "dependencies": {
+    "@nomiclabs/hardhat-waffle": "^2.0.0",
+    "chai": "^4.3.4",
+    "ethereum-waffle": "^3.4.0",
+    "ethers": "^5.0.0",
+    "hardhat": "^2.0.0"
+  },
+  "devDependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+}
