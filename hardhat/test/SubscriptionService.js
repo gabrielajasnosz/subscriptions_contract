@@ -229,22 +229,6 @@ describe("SubscriptionService", function () {
                 subscriptionService.connect(addr1).subscribe(longEmail, longName, longName, { value: subscriptionFee })
             ).to.be.revertedWith("Email cannot be empty or exceed 100 characters");
         });
-
-        it("26. Should correctly handle multiple subscriptions and unsubscriptions", async function () {
-            await subscriptionService.connect(addr1).subscribe("test1@example.com", "John", "Doe", { value: subscriptionFee });
-            await subscriptionService.connect(addr2).subscribe("test2@example.com", "Jane", "Doe", { value: subscriptionFee });
-            await subscriptionService.connect(addr3).subscribe("test3@example.com", "Jim", "Beam", { value: subscriptionFee });
-
-            await subscriptionService.connect(addr1).unsubscribe();
-            await subscriptionService.connect(addr2).unsubscribe();
-
-            const subscribers = await subscriptionService.getAllSubscribers();
-            expect(subscribers.length).to.equal(3);
-
-            expect(subscribers[0].isSubscribed).to.be.false;
-            expect(subscribers[1].isSubscribed).to.be.false;
-            expect(subscribers[2].isSubscribed).to.be.true;
-        });
     });
 
     describe("View Functions", function () {

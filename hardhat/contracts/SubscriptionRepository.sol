@@ -5,7 +5,7 @@ contract SubscriptionService {
     address payable public immutable owner;
     uint256 public subscriptionFee;
     uint256 public constant subscriptionPeriod = 60 seconds;
-
+    bool private locked = false;
     mapping(address => bool) public isAddressInList;
 
     struct Subscriber {
@@ -16,17 +16,18 @@ contract SubscriptionService {
         string lastName;
     }
 
-    struct SubscriberInfo {
+    struct SubscriptionHistory {
         address subscriberAddress;
-        uint256 subscriptionDue;
-        bool isSubscribed;
+        uint256 subscriptionStart;
+        uint256 subscriptionValidTill;
+        uint256 subscriptionEnd;
         string email;
         string firstName;
         string lastName;
-        bool isSubscriptionActive;
     }
 
     mapping(address => Subscriber) public subscribers;
+    mapping(address => SubscriptionHistory[]) public subscriptionHistories;
     address[] public subscriberAddresses;
 
     event Subscribed(address indexed subscriber, uint256 subscriptionDue, string email, string firstName, string lastName);
@@ -49,6 +50,13 @@ contract SubscriptionService {
         return block.timestamp;
     }
 
+    modifier noReentrancy() {
+        require(!locked, "ReentrancyGuard: reentrant call");
+        locked = true;
+        _;
+        locked = false;
+    }
+
     function subscribe(string calldata email, string calldata firstName, string calldata lastName) external payable {
         require(msg.value == subscriptionFee, "Incorrect subscription fee");
         require(!subscribers[msg.sender].isSubscribed, "Already subscribed");
@@ -63,11 +71,30 @@ contract SubscriptionService {
         subscriberAddresses.push(msg.sender);
         isAddressInList[msg.sender] = true;
 
+        subscriptionHistories[msg.sender].push(SubscriptionHistory({
+        subscriberAddress: msg.sender,
+        subscriptionStart: timeNow,
+        subscriptionValidTill: timeNow + subscriptionPeriod,
+        subscriptionEnd: 0,
+        email: email,
+        firstName: firstName,
+        lastName: lastName
+        }));
+
         emit Subscribed(msg.sender, timeNow + subscriptionPeriod, email, firstName, lastName);
     }
 
     function unsubscribe() external {
         require(subscribers[msg.sender].isSubscribed, "You must have a subscription to unsubscribe");
+
+        uint256 timeNow = currentTime();
+        uint256 arrayLenght = subscriptionHistories[msg.sender].length;
+        if (arrayLenght > 0) {
+            uint256 lastIndex = subscriptionHistories[msg.sender].length - 1;
+            if (subscriptionHistories[msg.sender][lastIndex].subscriptionEnd == 0) {
+                subscriptionHistories[msg.sender][lastIndex].subscriptionEnd = timeNow;
+            }
+        }
 
         subscribers[msg.sender].isSubscribed = false;
         isAddressInList[msg.sender] = false;
@@ -82,6 +109,24 @@ contract SubscriptionService {
         require(timeNow >= subscribers[msg.sender].subscriptionDue, "Payment not due yet");
 
         subscribers[msg.sender].subscriptionDue = timeNow + subscriptionPeriod;
+
+        if (subscriptionHistories[msg.sender].length > 0) {
+            uint256 lastIndex = subscriptionHistories[msg.sender].length - 1;
+            if (subscriptionHistories[msg.sender][lastIndex].subscriptionEnd == 0) {
+                subscriptionHistories[msg.sender][lastIndex].subscriptionEnd = timeNow;
+            }
+        }
+
+        subscriptionHistories[msg.sender].push(SubscriptionHistory({
+        subscriberAddress: msg.sender,
+        subscriptionStart: timeNow,
+        subscriptionValidTill: timeNow + subscriptionPeriod,
+        subscriptionEnd: 0,
+        email: subscribers[msg.sender].email,
+        firstName: subscribers[msg.sender].firstName,
+        lastName: subscribers[msg.sender].lastName
+        }));
+
         emit Payment(msg.sender, msg.value, subscribers[msg.sender].subscriptionDue);
     }
 
@@ -92,21 +137,31 @@ contract SubscriptionService {
         return (isSubscriptionActive, sub.subscriptionDue, sub.email, sub.firstName, sub.lastName);
     }
 
-    function getAllSubscribers() public view onlyOwner returns (SubscriberInfo[] memory) {
-        require(subscriberAddresses.length > 0, "No subscribers found");
-        uint256 length = subscriberAddresses.length;  // Buffering the length of the array
-        SubscriberInfo[] memory allSubscribers = new SubscriberInfo[](length);
-        for (uint256 i = 0; i < length; i++) {
-            address addr = subscriberAddresses[i];
-            Subscriber memory sub = subscribers[addr];
-            uint256 timeNow = currentTime();
-            bool isSubscriptionActive = sub.isSubscribed && (timeNow < sub.subscriptionDue);
-            allSubscribers[i] = SubscriberInfo(addr, sub.subscriptionDue, sub.isSubscribed, sub.email, sub.firstName, sub.lastName, isSubscriptionActive);
+    function getAllSubscribers() public view onlyOwner returns (SubscriptionHistory[] memory) {
+        uint256 totalSubscriptions = 0;
+
+        uint256 lenght = subscriberAddresses.length;
+        for (uint256 i = 0; i < lenght; i++) {
+            totalSubscriptions += subscriptionHistories[subscriberAddresses[i]].length;
         }
-        return allSubscribers;
+
+        SubscriptionHistory[] memory allSubscriptions = new SubscriptionHistory[](totalSubscriptions);
+        uint256 index = 0;
+
+        uint256 arrayLength2 = subscriberAddresses.length;
+        for (uint256 i = 0; i < arrayLength2; i++) {
+            address subscriber = subscriberAddresses[i];
+            SubscriptionHistory[] memory histories = subscriptionHistories[subscriber];
+            for (uint256 j = 0; j < histories.length; j++) {
+                allSubscriptions[index] = histories[j];
+                index++;
+            }
+        }
+
+        return allSubscriptions;
     }
 
-    function withdrawFunds() public onlyOwner {
+    function withdrawFunds() public onlyOwner noReentrancy {
         owner.transfer(address(this).balance);
     }
 
